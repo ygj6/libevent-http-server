@@ -1,0 +1,129 @@
+---
+name: windows
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths-ignore:
+      - '**.md'
+      - '.mailmap'
+      - 'ChangeLog*'
+      - 'whatsnew*'
+      - 'LICENSE'
+  push:
+    paths-ignore:
+      - '**.md'
+      - '.mailmap'
+      - 'ChangeLog*'
+      - 'whatsnew*'
+      - 'LICENSE'
+
+jobs:
+  vs2017:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2016]
+        EVENT_MATRIX: [NONE]
+
+    steps:
+      - uses: actions/checkout@v2.0.0
+
+      - name: Cache Depends
+        id: cache-depends
+        uses: actions/cache@v1.0.3
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ matrix.os }}-vcpkg
+
+      - name: Cache Build
+        uses: actions/cache@v1.0.3
+        with:
+          path: build
+          key: ${{ matrix.os }}-${{ matrix.EVENT_MATRIX }}
+
+      - name: Install Depends
+        if: steps.cache-depends.outputs.cache-hit != 'true'
+        shell: powershell
+        run: vcpkg install libevent:x64-windows glog:x64-windows gflags:x64-windows
+
+      - name: Build And Test
+        shell: powershell
+        run: |
+          # netsh advfirewall firewall add rule name="Open Port 6790" dir=in action=allow protocol=TCP localport=6790
+          mkdir build -ea 0
+          cd build
+          cmake .. -G "Visual Studio 15 2017 Win64"
+          cmake --build .
+          $ws=$(pwd).Path
+          $env:prog="$ws\Debug\main.exe"
+          $VCPKG_ROOT="C:/vcpkg/installed/x64-windows"
+          $env:PATH="$VCPKG_ROOT/bin;$VCPKG_ROOT/lib;$env:PATH"
+          Start-Job -ScriptBlock { Invoke-Expression "$env:prog"; }
+          Start-Sleep -s 5
+          Invoke-WebRequest -Uri "http://127.0.0.1:6790/" -Method Get -TimeoutSec 10
+          Get-Job
+          # Receive-Job -Id $(Get-Job).Id
+          # Remove-Job -Id $(Get-Job).Id -Force
+
+      - uses: actions/upload-artifact@v1
+        if: failure()
+        with:
+          name: ${{ matrix.os }}-${{ matrix.EVENT_MATRIX }}-build
+          path: build
+
+  vs2019:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2019]
+        EVENT_MATRIX:
+          - NONE
+
+    steps:
+      - uses: actions/checkout@v2.0.0
+
+      - name: Cache Depends
+        id: cache-depends
+        uses: actions/cache@v1.1.0
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ matrix.os }}-vcpkg
+
+      - name: Cache Build
+        uses: actions/cache@v1.1.0
+        with:
+          path: build
+          key: ${{ matrix.os }}-${{ matrix.EVENT_MATRIX }}-build
+
+      - name: Install Depends
+        if: steps.cache-depends.outputs.cache-hit != 'true'
+        shell: powershell
+        run: vcpkg install libevent:x64-windows glog:x64-windows gflags:x64-windows
+
+      - name: Build And Test
+        shell: powershell
+        run: |
+          # New-NetFirewallRule -DisplayName 'Open Port 6790' -Profile @('Domain', 'Private') -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6790
+          mkdir build -ea 0
+          cd build
+          cmake .. -G "Visual Studio 16 2019" -A x64
+          cmake --build .
+          $ws=$(pwd).Path
+          $env:prog="$ws\Debug\main.exe"
+          $VCPKG_ROOT="C:/vcpkg/installed/x64-windows"
+          $env:PATH="$VCPKG_ROOT/bin;$VCPKG_ROOT/lib;$env:PATH"
+          Start-Job -ScriptBlock { Invoke-Expression "$env:prog"; }
+          Start-Sleep -s 5
+          Invoke-WebRequest -Uri "http://127.0.0.1:6790/"
+          Get-Job
+          # Receive-Job -Id $(Get-Job).Id
+          # Remove-Job -Id $(Get-Job).Id -Force
+
+      - uses: actions/upload-artifact@v1
+        if: failure()
+        with:
+          name: ${{ matrix.os }}-${{ matrix.EVENT_MATRIX }}-build
+          path: build
