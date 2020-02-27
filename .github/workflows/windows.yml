@@ -48,6 +48,26 @@ jobs:
         shell: powershell
         run: vcpkg install libevent:x64-windows glog:x64-windows gflags:x64-windows
 
+      - name: Cache curl
+        id: cache-curl
+        uses: actions/cache@v1.0.3
+        with:
+          path: ~/libcurl-vc15-x64-release-dll-ipv6-sspi-winssl
+          key: libcurl-vc15-x64-release-dll-ipv6-sspi-winssl
+      - name: Install curl
+        shell: powershell
+        if: steps.cache-curl.outputs.cache-hit != 'true'
+        run: |
+          Invoke-WebRequest -Uri https://github.com/curl/curl/archive/curl-7_61_0.zip -OutFile curl-curl-7_61_0.zip
+          7z x curl-curl-7_61_0.zip
+          cd curl-curl-7_61_0
+          .\buildconf.bat
+          cd winbuild
+          ls
+          cmd /v:on /C '"C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Auxiliary\Build\vcvars64.bat" & nmake /f makefile.vc MODE=dll VC=15 ENABLE_IDN=no DEBUG=no MACHINE=x64'
+          cd ..
+          mv builds\libcurl-vc15-x64-release-dll-ipv6-sspi-winssl ~/
+
       - name: Build And Test
         shell: powershell
         run: |
@@ -61,11 +81,14 @@ jobs:
           $VCPKG_ROOT="C:/vcpkg/installed/x64-windows"
           $env:PATH="$VCPKG_ROOT/bin;$VCPKG_ROOT/lib;$env:PATH"
           Start-Job -ScriptBlock { Invoke-Expression "$env:prog"; }
-          Start-Sleep -s 5
-          Invoke-WebRequest -Uri "http://127.0.0.1:6790/" -Method Get -TimeoutSec 10
-          Get-Job
-          # Receive-Job -Id $(Get-Job).Id
-          # Remove-Job -Id $(Get-Job).Id -Force
+
+          cd ..\test
+          mkdir build
+          cd build
+          $env:HOME=$HOME
+          cmake .. -G "Visual Studio 15 2017 Win64"
+          cmake --build .
+          ctest -C Debug -V
 
       - uses: actions/upload-artifact@v1
         if: failure()
